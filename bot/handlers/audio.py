@@ -7,7 +7,7 @@ from aiogram import Bot, Router
 from aiogram.types import BufferedInputFile, Message
 
 import config
-from transcriber import transcribe
+from transcriber import generate_title, transcribe
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -33,12 +33,13 @@ async def _download_and_transcribe(
         file = await bot.get_file(file_id)
         await bot.download_file(file.file_path, destination=tmp_path)
         text = await transcribe(tmp_path)
+        title = await generate_title(text)
 
         date_str = datetime.now().strftime("%Y-%m-%d")
-        safe_name = display_name.replace("/", "_").replace("\\", "_")
-        filename = f"{date_str}_{safe_name}.txt"
+        safe_title = title.replace("/", "_").replace("\\", "_").replace(":", "")
+        filename = f"{date_str}_{safe_title}.txt"
 
-        caption_lines = [f"📄 *{display_name}*"]
+        caption_lines = [f"📄 *{title}*"]
         if duration is not None:
             caption_lines.append(f"⏱ Длительность: {_format_duration(duration)}")
         caption_lines.append(f"📅 {date_str}")

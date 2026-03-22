@@ -9,7 +9,7 @@ from aiogram import Router
 from aiogram.types import BufferedInputFile, Message
 
 from downloader import VideoPrivateError, VideoUnavailableError, download_audio
-from transcriber import transcribe
+from transcriber import generate_title, transcribe
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -52,12 +52,14 @@ async def handle_link(message: Message) -> None:
     try:
         audio_path = await download_audio(url)
         text = await transcribe(audio_path)
+        title = await generate_title(text)
 
         date_str = datetime.now().strftime("%Y-%m-%d")
-        filename = f"{date_str}_{label.replace(' ', '_')}.txt"
+        safe_title = title.replace("/", "_").replace("\\", "_").replace(":", "")
+        filename = f"{date_str}_{safe_title}.txt"
         short_url = url if len(url) <= 60 else url[:57] + "..."
         caption = (
-            f"📄 *{label}*\n"
+            f"📄 *{title}*\n"
             f"🔗 `{short_url}`\n"
             f"📅 {date_str}\n\n"
             "Транскрипция готова."

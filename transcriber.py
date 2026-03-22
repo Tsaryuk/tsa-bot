@@ -71,6 +71,53 @@ async def _transcribe_local(audio_path: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Title generation
+# ---------------------------------------------------------------------------
+
+def _title_from_text(text: str) -> str:
+    """Fallback: use first 6 words of transcription as title."""
+    words = text.split()[:6]
+    title = " ".join(words)
+    return title.rstrip(".,!?;:") if title else "Запись"
+
+
+async def _generate_title_openai(text: str) -> str:
+    import httpx
+    import openai
+
+    http_client = (
+        httpx.AsyncClient(proxy=config.OPENAI_PROXY) if config.OPENAI_PROXY else None
+    )
+    client = openai.AsyncOpenAI(api_key=config.OPENAI_API_KEY, http_client=http_client)
+    response = await client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "Придумай короткое название (3–6 слов) для записи по её тексту. "
+                    "Только название, без кавычек и пояснений. На том же языке, что и текст."
+                ),
+            },
+            {"role": "user", "content": text[:1000]},
+        ],
+        max_tokens=20,
+        temperature=0.4,
+    )
+    return response.choices[0].message.content.strip().rstrip(".,!?;:")
+
+
+async def generate_title(text: str) -> str:
+    """Generate a short meaningful title for the transcription."""
+    if config.OPENAI_API_KEY:
+        try:
+            return await _generate_title_openai(text)
+        except Exception:
+            logger.warning("Title generation failed, falling back to first words")
+    return _title_from_text(text)
+
+
+# ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
 
