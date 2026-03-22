@@ -23,9 +23,13 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 async def _transcribe_openai(audio_path: str) -> str:
+    import httpx
     import openai
 
-    client = openai.AsyncOpenAI(api_key=config.OPENAI_API_KEY)
+    http_client = (
+        httpx.AsyncClient(proxy=config.OPENAI_PROXY) if config.OPENAI_PROXY else None
+    )
+    client = openai.AsyncOpenAI(api_key=config.OPENAI_API_KEY, http_client=http_client)
     with open(audio_path, "rb") as f:
         response = await client.audio.transcriptions.create(
             model="whisper-1",

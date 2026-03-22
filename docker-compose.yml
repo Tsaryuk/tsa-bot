@@ -7,9 +7,9 @@ services:
     env_file:
       - .env
     environment:
-      # Route OpenAI API requests through Tor via Privoxy (bypasses Russian IP block)
-      - HTTPS_PROXY=http://host.docker.internal:8118
-      - NO_PROXY=localhost,127.0.0.1
+      # Route ONLY OpenAI API requests through Tor/Privoxy (bypasses Russian IP block)
+      # Other traffic (yt-dlp, Instagram, etc.) goes directly — no HTTPS_PROXY here
+      - OPENAI_PROXY=http://host.docker.internal:8118
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
