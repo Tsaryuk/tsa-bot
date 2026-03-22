@@ -102,50 +102,134 @@ tsa-bot/
 | `DOWNLOADS_DIR` | ❌ | `/tmp/tsa-bot-downloads` | Папка для временных файлов |
 | `LOG_LEVEL` | ❌ | `INFO` | Уровень логирования |
 
-## Деплой на VPS
+## Публикация на GitHub
 
-### Требования к серверу
+### Шаг 1 — Создать репозиторий на GitHub
 
-- Ubuntu 22.04 / Debian 12 (или любой дистрибутив с Docker)
-- 1+ CPU, 1 GB RAM (2 GB для моделей `medium`/`large-v3`)
-- Docker + Docker Compose
+1. Зайди на [github.com](https://github.com) и войди в аккаунт
+2. Нажми **"+"** → **"New repository"**
+3. Название: `tsa-bot`
+4. Видимость: **Private** (рекомендуется — токен бота нельзя публиковать)
+5. **Не ставь** галочки "Add README", ".gitignore", "license" — репо уже инициализировано локально
+6. Нажми **"Create repository"**
 
-### Установка Docker на Ubuntu
+### Шаг 2 — Привязать и запушить
+
+После создания GitHub покажет инструкции. Выполни в папке `tsa-bot/`:
 
 ```bash
+git remote add origin https://github.com/ВАШ_USERNAME/tsa-bot.git
+git branch -M main
+git push -u origin main
+```
+
+Замени `ВАШ_USERNAME` на свой GitHub логин.
+
+> **Важно:** `.env` файл с токенами **не попадёт** в репо — он уже исключён в `.gitignore`.
+
+## Деплой на VPS (пошагово)
+
+### Шаг 1 — Арендовать сервер
+
+**Hetzner Cloud (рекомендуется, дешевле):**
+1. Зайди на [hetzner.com/cloud](https://www.hetzner.com/cloud)
+2. Создай аккаунт, привяжи карту
+3. Нажми **"Create Server"**
+4. Выбери: Location **Nuremberg** или **Helsinki**, Image **Ubuntu 22.04**, Type **CX21** (2 vCPU, 4 GB RAM, ~€4/мес)
+5. В разделе **SSH Keys** добавь свой публичный ключ (если нет — можно пропустить, пароль придёт на email)
+6. Нажми **"Create & Buy"**
+
+**DigitalOcean (альтернатива):**
+1. Зайди на [digitalocean.com](https://digitalocean.com)
+2. **Create** → **Droplets**
+3. Image: **Ubuntu 22.04**, Size: **Basic → Regular → $6/мес** (1 vCPU, 1 GB RAM — минимум)
+4. Добавь SSH Key или пароль
+
+### Шаг 2 — Подключиться к серверу
+
+```bash
+ssh root@IP_АДРЕС_СЕРВЕРА
+```
+
+Если использовал пароль — введи его при запросе.
+
+### Шаг 3 — Установить Docker
+
+```bash
+# Одна команда устанавливает Docker и Docker Compose
 curl -fsSL https://get.docker.com | sh
+
+# Разрешить запуск без sudo (необязательно для root)
 sudo usermod -aG docker $USER
 newgrp docker
+
+# Проверить установку
+docker --version
+docker compose version
 ```
 
-### Деплой
+### Шаг 4 — Клонировать репозиторий
 
 ```bash
-# Клонировать репозиторий на сервер
-git clone <repo-url> tsa-bot
+# Установить git (если нет)
+apt install -y git
+
+# Клонировать репо (замени URL на свой GitHub репозиторий)
+git clone https://github.com/ВАШ_USERNAME/tsa-bot.git
 cd tsa-bot
-
-# Настроить окружение
-cp .env.example .env
-nano .env   # вставить TELEGRAM_BOT_TOKEN
-
-# Запустить
-docker-compose up -d
-
-# Убедиться, что бот работает
-docker-compose logs -f
 ```
 
-### Обновление
+### Шаг 5 — Создать .env с токеном
 
 ```bash
-git pull
-docker-compose up -d --build
+cp .env.example .env
+nano .env
 ```
 
-### Автозапуск (systemd)
+В редакторе вставь свой токен:
 
-Docker с `restart: unless-stopped` автоматически перезапускает контейнер при перезагрузке сервера, если Docker настроен как systemd-сервис (по умолчанию при установке через `get.docker.com`).
+```
+TELEGRAM_BOT_TOKEN=123456789:ABCdef...
+```
+
+Сохранить: `Ctrl+O`, `Enter`, выйти: `Ctrl+X`
+
+### Шаг 6 — Запустить бота
+
+```bash
+docker compose up -d --build
+```
+
+Это скачает образ, соберёт контейнер и запустит его в фоне.
+
+Проверить что работает:
+
+```bash
+docker compose logs -f
+```
+
+Должен появиться лог вида `Bot started`. Выйти из логов: `Ctrl+C`
+
+### Автозапуск после перезагрузки сервера
+
+В `docker-compose.yml` уже настроено `restart: unless-stopped` — контейнер автоматически стартует при перезагрузке сервера (пока Docker сам запускается через systemd, что является стандартным поведением при установке через `get.docker.com`).
+
+Проверить:
+
+```bash
+sudo reboot
+# подождать 30 секунд, подключиться снова
+ssh root@IP_АДРЕС_СЕРВЕРА
+docker ps   # контейнер должен быть в статусе "Up"
+```
+
+### Обновление бота
+
+```bash
+cd tsa-bot
+git pull
+docker compose up -d --build
+```
 
 ## Выбор модели Whisper
 
