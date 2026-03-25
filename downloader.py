@@ -9,6 +9,7 @@ import asyncio
 import logging
 import os
 import uuid
+from dataclasses import dataclass
 from functools import partial
 
 import config
@@ -47,6 +48,14 @@ _UNAVAILABLE_PHRASES = (
     "unable to extract",
     "404",
 )
+
+
+@dataclass(frozen=True)
+class AudioMeta:
+    """Metadata returned by download_audio_with_meta."""
+    path: str
+    title: str | None = None
+    duration: int | None = None
 
 
 class VideoDownloadError(Exception):
@@ -104,3 +113,46 @@ async def download_audio(url: str) -> str:
     output_template = os.path.join(config.DOWNLOADS_DIR, str(uuid.uuid4()))
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, partial(_download_sync, url, output_template))
+
+
+def _download_with_meta_sync(url: str, output_path: str) -> AudioMeta:
+    import yt_dlp
+    from yt_dlp.utils import DownloadError, ExtractorError
+
+    opts = {
+        **YDL_OPTS,
+        "outtmpl": output_path,
+    }
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+    except (DownloadError, ExtractorError) as exc:
+        raise _classify_ydl_error(str(exc)) from exc
+
+    final = output_path + ".mp3"
+    if not os.path.exists(final):
+        raise VideoDownloadError(
+            f"Файл не найден после загрузки. Возможно, формат не поддерживается: {url}"
+        )
+
+    title = info.get("title") if info else None
+    duration = info.get("duration") if info else None
+    if duration is not None:
+        duration = int(duration)
+
+    return AudioMeta(path=final, title=title, duration=duration)
+
+
+async def download_audio_with_meta(url: str) -> AudioMeta:
+    """Download audio and return AudioMeta with path, title, and duration.
+
+    Raises:
+        VideoPrivateError: if the content is private or requires login.
+        VideoUnavailableError: if the content has been removed or is geo-blocked.
+        VideoDownloadError: for any other download failure.
+    """
+    output_template = os.path.join(config.DOWNLOADS_DIR, str(uuid.uuid4()))
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        None, partial(_download_with_meta_sync, url, output_template)
+    )

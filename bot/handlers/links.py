@@ -16,7 +16,12 @@ from aiogram.types import (
     Message,
 )
 
-from downloader import VideoPrivateError, VideoUnavailableError, download_audio
+from downloader import (
+    VideoPrivateError,
+    VideoUnavailableError,
+    download_audio,
+    download_audio_with_meta,
+)
 from transcriber import generate_title, transcribe, transcribe_with_timestamps
 
 router = Router()
@@ -235,20 +240,28 @@ async def cb_youtube_download(callback: CallbackQuery) -> None:
     )
     audio_path = None
     try:
-        audio_path = await download_audio(url)
+        meta = await download_audio_with_meta(url)
+        audio_path = meta.path
         date_str = datetime.now().strftime("%Y-%m-%d")
         short_url = url if len(url) <= 60 else url[:57] + "..."
+        title_line = f"\U0001f3b5 *{meta.title}*\n" if meta.title else "\U0001f3b5 *Аудио из YouTube*\n"
         caption = (
-            f"\U0001f3b5 *Аудио из YouTube*\n"
+            f"{title_line}"
             f"\U0001f517 `{short_url}`\n"
             f"\U0001f4c5 {date_str}"
         )
 
         await callback.message.delete()
         audio_file = FSInputFile(audio_path)
-        await callback.message.answer_audio(
-            audio_file, caption=caption, parse_mode="Markdown"
-        )
+        audio_kwargs: dict = {
+            "caption": caption,
+            "parse_mode": "Markdown",
+        }
+        if meta.title:
+            audio_kwargs["title"] = meta.title
+        if meta.duration:
+            audio_kwargs["duration"] = meta.duration
+        await callback.message.answer_audio(audio_file, **audio_kwargs)
     except VideoPrivateError:
         await callback.message.edit_text(
             "\U0001f512 Видео приватное или требует авторизации."
