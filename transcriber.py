@@ -61,8 +61,8 @@ async def _transcribe_openai_timestamps(audio_path: str) -> str:
         )
     lines = []
     for seg in response.segments or []:
-        ts = _format_ts(seg["start"])
-        lines.append(f"[{ts}] {seg['text'].strip()}")
+        ts = _format_ts(seg.start)
+        lines.append(f"[{ts}] {seg.text.strip()}")
     return "\n".join(lines)
 
 
