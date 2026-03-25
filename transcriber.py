@@ -22,20 +22,48 @@ logger = logging.getLogger(__name__)
 # OpenAI Whisper API backend
 # ---------------------------------------------------------------------------
 
-async def _transcribe_openai(audio_path: str) -> str:
+def _format_ts(seconds: float) -> str:
+    m, s = divmod(int(seconds), 60)
+    h, m = divmod(m, 60)
+    if h:
+        return f"{h}:{m:02d}:{s:02d}"
+    return f"{m:02d}:{s:02d}"
+
+
+def _openai_client():
     import httpx
     import openai
 
     http_client = (
         httpx.AsyncClient(proxy=config.OPENAI_PROXY) if config.OPENAI_PROXY else None
     )
-    client = openai.AsyncOpenAI(api_key=config.OPENAI_API_KEY, http_client=http_client)
+    return openai.AsyncOpenAI(api_key=config.OPENAI_API_KEY, http_client=http_client)
+
+
+async def _transcribe_openai(audio_path: str) -> str:
+    client = _openai_client()
     with open(audio_path, "rb") as f:
         response = await client.audio.transcriptions.create(
             model="whisper-1",
             file=f,
         )
     return response.text
+
+
+async def _transcribe_openai_timestamps(audio_path: str) -> str:
+    client = _openai_client()
+    with open(audio_path, "rb") as f:
+        response = await client.audio.transcriptions.create(
+            model="whisper-1",
+            file=f,
+            response_format="verbose_json",
+            timestamp_granularities=["segment"],
+        )
+    lines = []
+    for seg in response.segments or []:
+        ts = _format_ts(seg["start"])
+        lines.append(f"[{ts}] {seg['text'].strip()}")
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
@@ -65,9 +93,24 @@ def _transcribe_local_sync(audio_path: str) -> str:
     return " ".join(seg.text.strip() for seg in segments)
 
 
+def _transcribe_local_timestamps_sync(audio_path: str) -> str:
+    model = _get_local_model()
+    segments, _info = model.transcribe(audio_path)
+    lines = []
+    for seg in segments:
+        ts = _format_ts(seg.start)
+        lines.append(f"[{ts}] {seg.text.strip()}")
+    return "\n".join(lines)
+
+
 async def _transcribe_local(audio_path: str) -> str:
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, _transcribe_local_sync, audio_path)
+
+
+async def _transcribe_local_timestamps(audio_path: str) -> str:
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, _transcribe_local_timestamps_sync, audio_path)
 
 
 # ---------------------------------------------------------------------------
@@ -82,13 +125,7 @@ def _title_from_text(text: str) -> str:
 
 
 async def _generate_title_openai(text: str) -> str:
-    import httpx
-    import openai
-
-    http_client = (
-        httpx.AsyncClient(proxy=config.OPENAI_PROXY) if config.OPENAI_PROXY else None
-    )
-    client = openai.AsyncOpenAI(api_key=config.OPENAI_API_KEY, http_client=http_client)
+    client = _openai_client()
     response = await client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
@@ -129,3 +166,13 @@ async def transcribe(audio_path: str) -> str:
     else:
         logger.debug("Using local faster-whisper for %s", audio_path)
         return await _transcribe_local(audio_path)
+
+
+async def transcribe_with_timestamps(audio_path: str) -> str:
+    """Transcribe an audio file and return text with [MM:SS] timestamps."""
+    if config.OPENAI_API_KEY:
+        logger.debug("Using OpenAI Whisper API (timestamps) for %s", audio_path)
+        return await _transcribe_openai_timestamps(audio_path)
+    else:
+        logger.debug("Using local faster-whisper (timestamps) for %s", audio_path)
+        return await _transcribe_local_timestamps(audio_path)

@@ -74,3 +74,11 @@ async def handle_audio(message: Message, bot: Bot) -> None:
     await _download_and_transcribe(
         bot, audio.file_id, message, display_name, audio.duration
     )
+
+
+@router.message(lambda m: m.video_note is not None)
+async def handle_video_note(message: Message, bot: Bot) -> None:
+    video_note = message.video_note
+    await _download_and_transcribe(
+        bot, video_note.file_id, message, "Видеосообщение", video_note.duration
+    )
