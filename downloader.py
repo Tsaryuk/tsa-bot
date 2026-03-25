@@ -8,6 +8,7 @@ Instagram Reels, and TikTok.
 import asyncio
 import logging
 import os
+import time
 import uuid
 from dataclasses import dataclass
 from functools import partial
@@ -20,6 +21,9 @@ YDL_OPTS = {
     "format": "bestaudio/best",
     "quiet": True,
     "no_warnings": True,
+    "socket_timeout": 30,
+    "retries": 3,
+    "fragment_retries": 3,
     "postprocessors": [
         {
             "key": "FFmpegExtractAudio",
@@ -28,6 +32,9 @@ YDL_OPTS = {
         }
     ],
 }
+
+_MAX_RETRIES = 2
+_RETRY_DELAY = 3  # seconds
 
 # Substrings in yt-dlp error messages that indicate private/unavailable content
 _PRIVATE_PHRASES = (
@@ -48,6 +55,17 @@ _UNAVAILABLE_PHRASES = (
     "unable to extract",
     "404",
 )
+_CONNECTION_PHRASES = (
+    "connection",
+    "timed out",
+    "timeout",
+    "urlopen error",
+    "network",
+    "errno",
+    "ssl",
+    "reset by peer",
+    "broken pipe",
+)
 
 
 @dataclass(frozen=True)
@@ -66,6 +84,10 @@ class VideoUnavailableError(VideoDownloadError):
     """Content is unavailable (removed, geo-blocked, etc.)."""
 
 
+class VideoConnectionError(VideoDownloadError):
+    """Network/connection error during download."""
+
+
 class VideoPrivateError(VideoDownloadError):
     """Content is private or requires authentication."""
 
@@ -76,7 +98,18 @@ def _classify_ydl_error(message: str) -> VideoDownloadError:
         return VideoPrivateError(f"Контент приватный или требует авторизации: {message}")
     if any(p in low for p in _UNAVAILABLE_PHRASES):
         return VideoUnavailableError(f"Контент недоступен: {message}")
+    if any(p in low for p in _CONNECTION_PHRASES):
+        return VideoConnectionError(
+            f"Ошибка соединения при загрузке видео. Попробуйте позже: {message}"
+        )
     return VideoDownloadError(f"Ошибка загрузки: {message}")
+
+
+def _is_retryable(exc: VideoDownloadError) -> bool:
+    """Connection errors are worth retrying; private/unavailable are not."""
+    return isinstance(exc, (VideoConnectionError, VideoDownloadError)) and not isinstance(
+        exc, (VideoPrivateError, VideoUnavailableError)
+    )
 
 
 def _download_sync(url: str, output_path: str) -> str:
@@ -87,11 +120,21 @@ def _download_sync(url: str, output_path: str) -> str:
         **YDL_OPTS,
         "outtmpl": output_path,
     }
-    try:
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            ydl.download([url])
-    except (DownloadError, ExtractorError) as exc:
-        raise _classify_ydl_error(str(exc)) from exc
+    last_exc: VideoDownloadError | None = None
+    for attempt in range(_MAX_RETRIES + 1):
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                ydl.download([url])
+            break
+        except (DownloadError, ExtractorError) as exc:
+            last_exc = _classify_ydl_error(str(exc))
+            if not _is_retryable(last_exc) or attempt == _MAX_RETRIES:
+                raise last_exc from exc
+            logger.warning(
+                "Download attempt %d/%d failed for %s: %s — retrying in %ds",
+                attempt + 1, _MAX_RETRIES + 1, url, exc, _RETRY_DELAY,
+            )
+            time.sleep(_RETRY_DELAY)
 
     # yt-dlp appends the extension after post-processing
     final = output_path + ".mp3"
@@ -123,11 +166,22 @@ def _download_with_meta_sync(url: str, output_path: str) -> AudioMeta:
         **YDL_OPTS,
         "outtmpl": output_path,
     }
-    try:
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-    except (DownloadError, ExtractorError) as exc:
-        raise _classify_ydl_error(str(exc)) from exc
+    info = None
+    last_exc: VideoDownloadError | None = None
+    for attempt in range(_MAX_RETRIES + 1):
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+            break
+        except (DownloadError, ExtractorError) as exc:
+            last_exc = _classify_ydl_error(str(exc))
+            if not _is_retryable(last_exc) or attempt == _MAX_RETRIES:
+                raise last_exc from exc
+            logger.warning(
+                "Download attempt %d/%d failed for %s: %s — retrying in %ds",
+                attempt + 1, _MAX_RETRIES + 1, url, exc, _RETRY_DELAY,
+            )
+            time.sleep(_RETRY_DELAY)
 
     final = output_path + ".mp3"
     if not os.path.exists(final):

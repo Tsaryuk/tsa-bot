@@ -17,12 +17,18 @@ from aiogram.types import (
 )
 
 from downloader import (
+    VideoConnectionError,
     VideoPrivateError,
     VideoUnavailableError,
     download_audio,
     download_audio_with_meta,
 )
-from transcriber import generate_title, transcribe, transcribe_with_timestamps
+from transcriber import (
+    TranscriptionConnectionError,
+    generate_title,
+    transcribe,
+    transcribe_with_timestamps,
+)
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -174,9 +180,17 @@ async def handle_link(message: Message) -> None:
         await status_msg.edit_text(
             "\u274c Видео недоступно (удалено или заблокировано). Попробуй другую ссылку."
         )
+    except (VideoConnectionError, TranscriptionConnectionError):
+        logger.exception("Connection error for url=%s", url)
+        await status_msg.edit_text(
+            "\u26a0\ufe0f Ошибка соединения — не удалось загрузить или транскрибировать видео. "
+            "Попробуй ещё раз через пару минут."
+        )
     except Exception as exc:
         logger.exception("Link transcription error for url=%s", url)
-        await status_msg.edit_text(f"\u274c Ошибка: {exc}")
+        await status_msg.edit_text(
+            "\u274c Произошла непредвиденная ошибка. Попробуй ещё раз позже."
+        )
     finally:
         if audio_path and os.path.exists(audio_path):
             os.remove(audio_path)
@@ -219,9 +233,17 @@ async def cb_youtube_timestamps(callback: CallbackQuery) -> None:
         await callback.message.edit_text(
             "\u274c Видео недоступно (удалено или заблокировано)."
         )
+    except (VideoConnectionError, TranscriptionConnectionError):
+        logger.exception("Connection error for url=%s", url)
+        await callback.message.edit_text(
+            "\u26a0\ufe0f Ошибка соединения — не удалось загрузить или транскрибировать видео. "
+            "Попробуй ещё раз через пару минут."
+        )
     except Exception as exc:
         logger.exception("Timestamp transcription error for url=%s", url)
-        await callback.message.edit_text(f"\u274c Ошибка: {exc}")
+        await callback.message.edit_text(
+            "\u274c Произошла непредвиденная ошибка. Попробуй ещё раз позже."
+        )
     finally:
         if audio_path and os.path.exists(audio_path):
             os.remove(audio_path)
@@ -270,9 +292,17 @@ async def cb_youtube_download(callback: CallbackQuery) -> None:
         await callback.message.edit_text(
             "\u274c Видео недоступно (удалено или заблокировано)."
         )
+    except VideoConnectionError:
+        logger.exception("Connection error during audio download for url=%s", url)
+        await callback.message.edit_text(
+            "\u26a0\ufe0f Ошибка соединения — не удалось скачать аудио. "
+            "Попробуй ещё раз через пару минут."
+        )
     except Exception as exc:
         logger.exception("Audio download error for url=%s", url)
-        await callback.message.edit_text(f"\u274c Ошибка: {exc}")
+        await callback.message.edit_text(
+            "\u274c Произошла непредвиденная ошибка. Попробуй ещё раз позже."
+        )
     finally:
         if audio_path and os.path.exists(audio_path):
             os.remove(audio_path)
