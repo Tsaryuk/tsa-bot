@@ -7,6 +7,7 @@ load_dotenv()
 TELEGRAM_BOT_TOKEN: str = os.environ["TELEGRAM_BOT_TOKEN"]
 OPENAI_API_KEY: Optional[str] = os.getenv("OPENAI_API_KEY") or None
 OPENAI_PROXY: Optional[str] = os.getenv("OPENAI_PROXY") or None
+TELEGRAM_PROXY: Optional[str] = os.getenv("TELEGRAM_PROXY") or None
 WHISPER_MODEL: str = os.getenv("WHISPER_MODEL", "base")
 WHISPER_DEVICE: str = os.getenv("WHISPER_DEVICE", "cpu")
 WHISPER_COMPUTE_TYPE: str = os.getenv("WHISPER_COMPUTE_TYPE", "int8")

@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import socket
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.session.aiohttp import AiohttpSession
@@ -16,8 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 async def main() -> None:
-    session = AiohttpSession()
-    session._connector_init["family"] = socket.AF_INET
+    session = AiohttpSession(proxy=config.TELEGRAM_PROXY) if config.TELEGRAM_PROXY else AiohttpSession()
     bot = Bot(token=config.TELEGRAM_BOT_TOKEN, session=session)
     dp = Dispatcher()
     register_all_handlers(dp)

@@ -10,6 +10,8 @@ services:
       # Route ONLY OpenAI API requests through Tor/Privoxy (bypasses Russian IP block)
       # Other traffic (yt-dlp, Instagram, etc.) goes directly — no HTTPS_PROXY here
       - OPENAI_PROXY=http://host.docker.internal:8118
+      # Route Telegram Bot API through Tor/Privoxy (DPI blocks SNI api.telegram.org)
+      - TELEGRAM_PROXY=http://host.docker.internal:8118
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -17,9 +19,6 @@ services:
       - downloads:/tmp/tsa-bot-downloads
       # Cache the Whisper model weights so they are not re-downloaded on restart
       - whisper_cache:/root/.cache/huggingface
-    # Disable IPv6 — server has broken IPv6 to Telegram, causes polling timeouts
-    sysctls:
-      - net.ipv6.conf.all.disable_ipv6=1
     # Limit memory usage — increase if using large Whisper models
     mem_limit: 2g
     logging:
